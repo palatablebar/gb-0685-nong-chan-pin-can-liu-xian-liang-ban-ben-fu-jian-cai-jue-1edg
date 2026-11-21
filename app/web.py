@@ -13,11 +13,16 @@ def payload():
     content=data.get('csv')
     return (content.encode() if isinstance(content,str) else load(sample)),data.get('parameters',{})
 
+def baseline():
+    """上一份已发布台账；没有发布过时为空，第一次重传全部按新增处理。"""
+    return store.published()
+
 def api(stage):
-    content,parameters=payload();return jsonify(run(content,parameters,stage))
+    content,parameters=payload();return jsonify(run(content,parameters,stage,baseline()))
 
 def page(stage,template):
     latest=store.history();state=store.get(latest[0]['id']) if latest else run(load('dirty.csv'),{})
     source=load(request.args['sample']) if 'sample' in request.args else base64.b64decode(state['source_b64']) if state.get('source_b64') else load('dirty.csv')
-    data=run(source,state.get('manifest',{}).get('parameters',{}),stage)
-    return render_template(template,title=TITLE,short=SHORT,modules=MODULES,current=stage,data=data,run=state,history=latest)
+    data=run(source,state.get('manifest',{}).get('parameters',{}),stage,store.published())
+    return render_template(template,title=TITLE,short=SHORT,modules=MODULES,current=stage,data=data,run=state,history=latest,
+        published=store.published())

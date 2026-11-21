@@ -20,11 +20,16 @@ def create_app():
     def health():return jsonify(status='ok')
     @app.post('/api/runs')
     def submit():
-        content,params=payload();state=run(content,params);return jsonify(store.save(state['run_id'],state))
+        content,params=payload();state=run(content,params,7,store.published());return jsonify(store.save(state['run_id'],state))
     @app.get('/api/runs')
     def list_runs():return jsonify(store.history())
     @app.get('/api/runs/<run_id>')
     def get_run(run_id):return jsonify(store.get(run_id))
+    @app.get('/api/published')
+    def get_published():
+        state=store.published()
+        if state is None:raise DomainError('NOT_FOUND','尚无已发布批次',404)
+        return jsonify({k:state.get(k) for k in ('run_id','ledger','reconcile','business','calculations','archive','manifest')})
     @app.post('/api/runs/<run_id>/review')
     def review(run_id):
         data=request.get_json(silent=True) or {}
@@ -34,7 +39,14 @@ def create_app():
     def download(run_id):
         state=store.get(run_id)
         if not state.get('reconcile',{}).get('balanced'):raise DomainError('UNBALANCED','对账未平')
+        if not (state.get('ledger') or {}).get('publishable'):raise DomainError('LEDGER','台账重传账目不符')
         return Response(bundle(state),mimetype='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename=evidence.csv'})
+    @app.get('/api/archive/published/export.csv')
+    def download_published():
+        """封存当前已发布批次：本次重传挂起或中断时仍可出证，用旧版发布。"""
+        state=store.published()
+        if state is None:raise DomainError('NOT_FOUND','尚无已发布批次',404)
+        return Response(bundle(state),mimetype='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename=evidence-published.csv'})
     with app.app_context():
         if not store.history():
             state=run(load('dirty.csv'),{});store.save(state['run_id'],state)
